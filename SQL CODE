@@ -1,0 +1,166 @@
+SELECT COUNT(*) AS Total_Records
+FROM dbo.retail_sales_dirty_dataset;
+
+--COMPLETENESS CHECK
+
+--Missing Customer Name
+SELECT COUNT(*) AS Missing_Customer_Name
+FROM dbo.retail_sales_dirty_dataset
+WHERE Customer_Name IS NULL;
+
+--Missing Payment Status 
+SELECT COUNT(*) AS Missing_Payment_Status
+FROM dbo.retail_sales_dirty_dataset
+WHERE Payment_Status IS NULL;
+
+--Completeness Summary
+SELECT 
+    'Completeness' AS Dimension,
+    COUNT(*) AS Total_Records,
+    SUM(CASE WHEN Customer_Name IS NULL THEN 1 ELSE 0 END) +
+    SUM(CASE WHEN Payment_Status IS NULL THEN 1 ELSE 0 END) 
+    AS Issue_Count
+FROM dbo.retail_sales_dirty_dataset;
+
+
+--VALIDITY CHECKS
+
+--Invalid Quantity Check
+SELECT COUNT(*) AS Invalid_Quantity_Count
+FROM dbo.retail_sales_dirty_dataset
+WHERE Quantity <= 0;
+
+--Invalid Total Amount Check
+SELECT COUNT(*) AS Invalid_Total_Amount
+FROM dbo.retail_sales_dirty_dataset
+WHERE Total_Amount <= 0;
+
+--Invalid Unit Price Check
+SELECT COUNT(*) AS Invalid_Unit_Price
+FROM dbo.retail_sales_dirty_dataset
+WHERE Unit_Price <= 0;
+
+--Validity Summary
+SELECT 
+    'Validity' AS Dimension,
+    COUNT(*) AS Total_Records,
+    SUM(CASE WHEN Quantity <= 0 THEN 1 ELSE 0 END) +
+    SUM(CASE WHEN Unit_Price <= 0 THEN 1 ELSE 0 END) +
+    SUM(CASE WHEN Total_Amount <= 0 THEN 1 ELSE 0 END) 
+    AS Issue_Count
+FROM dbo.retail_sales_dirty_dataset;
+
+--CONSISTENCY CHECKS
+
+--Check Region Case Mismatch
+
+SELECT 
+    Region,
+    COUNT(*) AS Record_Count
+FROM dbo.retail_sales_dirty_dataset
+GROUP BY Region
+ORDER BY Record_Count DESC;
+
+--Count Inconsistent Region Records
+
+SELECT COUNT(*) AS Inconsistent_Region_Count
+FROM dbo.retail_sales_dirty_dataset
+WHERE Region <> UPPER(LEFT(Region,1)) + LOWER(SUBSTRING(Region,2,LEN(Region)));
+
+--Duplicate Order ID Check
+SELECT Order_ID, COUNT(*) AS Duplicate_Count
+FROM dbo.retail_sales_dirty_dataset
+GROUP BY Order_ID
+HAVING COUNT(*) > 1;
+
+--Consistency Summary
+
+SELECT 
+    'Consistency' AS Dimension,
+    COUNT(*) AS Total_Records,
+    SUM(CASE 
+            WHEN Region <> UPPER(LEFT(Region,1)) + LOWER(SUBSTRING(Region,2,LEN(Region)))
+            THEN 1 ELSE 0 
+        END) 
+    +
+    (SELECT COUNT(*) 
+     FROM (
+         SELECT Order_ID
+         FROM dbo.retail_sales_dirty_dataset
+         GROUP BY Order_ID
+         HAVING COUNT(*) > 1
+     ) d) AS Issue_Count
+FROM dbo.retail_sales_dirty_dataset;
+
+--CREATING SUMMERY TABLE 
+CREATE TABLE dbo.Data_Quality_Summary (
+    Dimension VARCHAR(20),
+    Total_Records INT,
+    Issue_Count INT,
+    Issue_Percentage DECIMAL(5,2)
+);
+-- Insert Completeness summary
+INSERT INTO dbo.Data_Quality_Summary
+SELECT 
+    'Completeness',
+    COUNT(*),
+    SUM(CASE WHEN Customer_Name IS NULL THEN 1 ELSE 0 END) +
+    SUM(CASE WHEN Payment_Status IS NULL THEN 1 ELSE 0 END),
+    CAST(
+        (
+            (
+                SUM(CASE WHEN Customer_Name IS NULL THEN 1 ELSE 0 END) +
+                SUM(CASE WHEN Payment_Status IS NULL THEN 1 ELSE 0 END)
+            ) * 100.0 / COUNT(*)
+        ) AS DECIMAL(5,2)
+    )
+FROM dbo.retail_sales_dirty_dataset;
+
+-- Insert Validity summary
+INSERT INTO dbo.Data_Quality_Summary
+SELECT 
+    'Validity',
+    COUNT(*),
+    SUM(CASE WHEN Quantity <= 0 THEN 1 ELSE 0 END) +
+    SUM(CASE WHEN Unit_Price <= 0 THEN 1 ELSE 0 END) +
+    SUM(CASE WHEN Total_Amount <= 0 THEN 1 ELSE 0 END),
+    CAST(
+        (
+            (
+                SUM(CASE WHEN Quantity <= 0 THEN 1 ELSE 0 END) +
+                SUM(CASE WHEN Unit_Price <= 0 THEN 1 ELSE 0 END) +
+                SUM(CASE WHEN Total_Amount <= 0 THEN 1 ELSE 0 END)
+            ) * 100.0 / COUNT(*)
+        ) AS DECIMAL(5,2)
+    )
+FROM dbo.retail_sales_dirty_dataset;
+
+-- Insert Consistency summary (Region case mismatch)
+INSERT INTO dbo.Data_Quality_Summary
+SELECT 
+    'Consistency',
+    COUNT(*),
+    SUM(
+        CASE 
+            WHEN Region <> UPPER(LEFT(Region,1)) 
+                 + LOWER(SUBSTRING(Region,2,LEN(Region)))
+            THEN 1 ELSE 0 
+        END
+    ),
+    CAST(
+        (
+            SUM(
+                CASE 
+                    WHEN Region <> UPPER(LEFT(Region,1)) 
+                         + LOWER(SUBSTRING(Region,2,LEN(Region)))
+                    THEN 1 ELSE 0 
+                END
+            ) * 100.0 / COUNT(*)
+        ) AS DECIMAL(5,2)
+    )
+FROM dbo.retail_sales_dirty_dataset;
+
+
+SELECT * 
+FROM dbo.Data_Quality_Summary;
+
